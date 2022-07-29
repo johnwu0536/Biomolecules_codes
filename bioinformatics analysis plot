@@ -1,0 +1,144 @@
+Volcano plot
+
+res <- read.table("geneprofiles.csv", sep =",", header = TRUE)
+head(res)
+   with(res, plot(baseMean,log2FoldChange, 
+                                  pch=20, 
+                                  cex=2.5,
+                                 main="Volcano plot",
+                                 abline(h=c(-1,1),lty = 5,lwd=4,col = "#8491B4FF"),
+                                 ylim=c(-7,8),col = 'grey',log="x"),
+ xlab = "baseMean",
+ylab = "log2FoldChange",cex.lab=2,cex.main = 3)
+
+with(subset(res, padj<.05 & log2FoldChange>1), 
+     points(baseMean,log2FoldChange,cex=2.5,
+            pch=20, 
+            col="#3C5488FF"))
+
+with(subset(res, padj<.05 & log2FoldChange< -1), 
+     points(baseMean,log2FoldChange, cex=2.5,
+            pch=20, 
+            col="#DC0000FF"))
+
+
+Bubble plot
+pathway = read.table("BBBterm.csv",header = T, sep=",")#包含Term Gene数目、FDR值、Group分组
+library(ggplot2)
+library(dplyr)
+library(forcats)
+
+p = ggplot(pathway,aes(y=reorder(Term,Generatio,sum),x=Generatio))
+p=p + geom_point()  
+p=p + geom_point(aes(size=Gene))+geom_hline(yintercept=c(1,2,3,4,5,6,7,8,9,10),col = "grey", lty=5,lwd=0.4)
+pbubble = p+ geom_point(aes(size=Gene,color=-1*log10(FDR)))
+pr = pbubble+scale_color_gradient(low="#FAFD7CFF",high = "#642822FF")
+pr = pr+labs(color=expression(-log[10](FDR)),size="Gene Count",x="Gene Ratio",y="Term",title="Pathway enrichment")+theme(plot.title=element_text(hjust=0.5))
+pr=pr + theme_bw(base_size = 15)+
+  theme(panel.grid.major = element_line(color = NA),panel.background = element_rect(fill = "transparent",color = NA),
+        plot.background = element_rect(fill = "transparent",color = NA),panel.grid.minor = element_blank(),
+        text = element_text(size = 18,family = "sans"))+xlim(0,0.8)+geom_hline(yintercept=c(0,11),col = "black",lwd=4)
+pr#输出图形
+
+DEGs by DESq2 method
+
+rm(list = ls())
+library(rio)
+library(dplyr)
+library(DESeq2)
+Gene <- read.csv("matrix.csv",row.names = 1, sep = ",", header = T)
+condition = factor(c(rep("treat1",n1),rep("untreat",n2))) ;#n1, n2, duplicates in different group
+coldata <- data.frame(row.names = colnames(Gene), condition)
+Gene[is.na(Gene)] <- 0
+dds <- DESeqDataSetFromMatrix(countData=Gene, colData=coldata, design=~condition)
+
+#PCA analysis
+rld <- vst(dds,blind=FALSE)
+plotPCA(rld, intgroup="condition")
+
+keep <- rowSums(counts(dds)>=0)>=1
+dds <- dds[keep,]
+dds = DESeq(dds)
+resultsNames(dds)
+dds$condition
+res <- results(dds)
+write.csv(res, file = "data.csv", sep = ",")
+
+Heatmap plot
+library(pheatmap)
+expression <- read.table("shor_term.csv",sep=",", header=T)
+rownames(expression) <- expression[,1]
+expression<-expression[,-1]
+annotation_col <- read.csv('Pindex.csv', sep = ",", header = T)
+rownames(annotation_col)<-colnames(expression)
+
+pheatmap(expression1,
+         scale='row',
+         show_colnames = F,    # 不展示行名
+         cluster_rows = T,     # 不对行聚类
+         cluster_cols = F,     # 不对列聚类
+         #annotation_col = col_nam1[,2],
+         border=FALSE,# co加注释
+         cellwidth=5,cellheight=0.5,          # 设置单元格的宽度和高度
+         color = colorRampPalette(colors = c("#DC0000FF","white","#3C5488FF"))(100),
+         fontsize=8)
+
+GSEA plot
+
+rm(list=ls())
+library(ReactomePA)
+library(tidyverse)
+library(data.table)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(biomaRt)
+library(enrichplot)
+library(dplyr)
+
+genelist_input <- read.csv("DEGGSEA.csv", header = T,sep = ',')
+genename <- as.character(genelist_input[,1])
+
+gene_map <- select(org.Hs.eg.db,keys = genename, keytype = "SYMBOL", columns = c("ENTREZID"))
+colnames(gene_map)[1]<- "Gene"
+write.csv(as.data.frame(gene_map),"genetransform.csv", row.names = F)
+
+aaa <- inner_join(gene_map,genelist_input,by = "Gene")
+aaa <- aaa[,-1]
+aaa <- na.omit(aaa)
+aaa$logFC <- sort(aaa$logFC,decreasing = T)
+
+geneList = aaa[,2]
+names(geneList) = as.character(aaa[,1])
+
+Go_gseresult <- gseGO(geneList, 'org.Hs.eg.db', keyType = "ENTREZID", ont="all", nPerm = 1000, minGSSize = 10, maxGSSize = 1000, pvalueCutoff=0.25)
+
+KEGG_gseresult <- gseKEGG(geneList, nPerm = 1000, minGSSize = 10, maxGSSize = 1000, pvalueCutoff=1)
+
+Go_ReactomeResult <- gsePathway(geneList, nPerm = 1000, minGSSize = 10, maxGSSize = 1000, pvalueCutoff=1)
+
+write.table(Go_ReactomeResult, file = "Go_ReactomeResult.csv", sep = ",", row.names = TRUE)
+write.table(KEGG_gseresult, file = "KEGG_gseresult.csv", sep = ",", row.names = TRUE)
+write.table(Go_gseresult, file = "Go_gseresult.csv", sep = ",", row.names = TRUE)
+
+#波浪图
+ridgeplot(Go_gseresult,10)
+#单个GSEA分析,第1个
+gseaplot(Go_ReactomeResult,1,pvalue_table = TURE)
+#富集曲线图形
+gseaplot2(Go_ReactomeResult,2,pvalue_table = T)
+#多个图形展示结果
+gseaplot2(Go_ReactomeResult,1:10,pvalue_table = T)
+
+gseaplot2(KEGG_gseresult,1, title = "hsa04310", color = "green", base_size = 11, rel_heights = c(1.5,0.5,1),subplots = 1:3,pvalue_table = TRUE, ES_geom = "line")
+#详细说明
+gseaplot2(
+  x, #gseaResult object，即GSEA结果
+  geneSetID,#富集的ID编号,第几个
+  title = "", #标题
+  color = "green",#GSEA线条颜色
+  base_size = 11,#基础字体大小
+  rel_heights = c(1.5, 0.5, 1),#副图的相对高度
+  subplots = 1:3, #要显示哪些副图 如subplots=c(1,3) #只要第一和第三个图，subplots=1#只要第一个图
+  pvalue_table = FALSE, #是否添加 pvalue table
+  ES_geom = "line" #running enrichment score用先还是用点ES_geom = "dot"
+)
